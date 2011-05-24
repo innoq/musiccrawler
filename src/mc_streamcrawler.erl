@@ -8,7 +8,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 
--module(mc_icy). 
+-module(mc_streamcrawler). 
 -behaviour(gen_server).
 
 %% API
@@ -24,7 +24,7 @@
 -define(SERVER, ?MODULE).
 -define(DEFAULT_PORT, 80).
 
--record(state, {port, sofar, filep, lsock, metatint=0}).
+-record(state, {port, sofar, filep, lsock, gotheader=false, metaint=0}).
 
 %%%===================================================================
 %%% API
@@ -74,11 +74,20 @@ handle_cast(stop, State) ->
 	io:format("hc:~p~n", [cast]),
     {stop, normal, State}.
 
-handle_info({tcp, _Socket, Bin}, State) ->
-	
-	io:format("hi:~p~n", [size(Bin)]),
-    file:write(State#state.filep, Bin),
-    {noreply, State#state{sofar = [Bin|State#state.sofar]}};
+handle_info({tcp, _Socket, Bin}, State) ->	
+	Size = size(Bin),
+	case State#state.gotheader of
+		true -> 
+			file:write(State#state.filep, Bin),
+			{noreply, State#state{sofar = [Bin|State#state.sofar]}};
+		false -> 
+			case analyzeHeaders(Bin) of 
+				{ok, MetaInt} -> 	io:format("~nMetaInt:~p~n", [MetaInt] ),
+									{noreply, State#state{sofar = [Bin|State#state.sofar], gotheader=true, metaint=MetaInt}};
+				{notfound}	  ->	file:write(State#state.filep, Bin),
+									{noreply, State#state{sofar = [Bin|State#state.sofar]}}
+			end
+	end;
 
 handle_info({tcp_closed, _Socket}, State) ->
 	io:format("hi:~p~n", [tcp_closed]),
@@ -97,42 +106,54 @@ terminate(_Reason, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.      
 
+
+%%%===================================================================
+%%% Internal Functions
+%%%===================================================================
+
+%%--------------------------------------------------------------------
+%% @doc Finishing operations. Closing tcp connection and file-pointer & Stuff 
+%% 					
+%%
+%% @end
+%%--------------------------------------------------------------------
 finish(Sock, SoFar, FileP) ->
 	file:close(FileP),
 	gen_tcp:close(Sock),
 	list_to_binary(lists:reverse(SoFar)).
 
-
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
-
-do_rpc(Socket, RawData) ->
-    try
-        {M, F, A} = split_out_mfa(RawData),
-        Result = apply(M, F, A),
-        gen_tcp:send(Socket, io_lib:fwrite("~p~n", [Result]))
-    catch
-        _Class:Err ->
-            gen_tcp:send(Socket, io_lib:fwrite("~p~n", [Err]))
-    end.
-
-split_out_mfa(RawData) ->
-    MFA = re:replace(RawData, "\r\n$", "", [{return, list}]),
-    {match, [M, F, A]} =
-        re:run(MFA,
-               "(.*):(.*)\s*\\((.*)\s*\\)\s*.\s*$",
-                   [{capture, [1,2,3], list}, ungreedy]),
-    {list_to_atom(M), list_to_atom(F), args_to_terms(A)}.
-
-args_to_terms(RawArgs) ->
-    {ok, Toks, _Line} = erl_scan:string("[" ++ RawArgs ++ "]. ", 1),
-    {ok, Args} = erl_parse:parse_term(Toks),
-    Args.
+%%--------------------------------------------------------------------
+%% @doc Analyze every header for some specific value and returning 
+%% 					
+%%
+%% @end
+%%--------------------------------------------------------------------
+analyzeHeaders(Bin) ->
+	ListOfHeaders = string:tokens(binary_to_list(Bin), "\r\n"),
+	case analyzeOfO(ListOfHeaders) of 
+		{ok, Value} -> {ok, Value};
+		{notfound} ->  {notfound}
+	end.
 
 
-%% test
+%%-------------------------------------------------------------------------------------
+%% @doc Analyze One for one header of header-line-list for the "icy-metaint: " - value 
+%% 					
+%%
+%% @end
+%%------------------------------------------------------------------------------------
 
-start_test() ->
-    {ok, _} = tr_server:start_link(1055). 
+analyzeOfO([]) 		
+		-> {notfound};
+analyzeOfO([H|T]) 	
+  		-> case (string:str(H, "icy-metaint:") > 0) of
+			   true -> 
+			   			Mis = string:strip(string:substr(H, 1+string:str(H, ":"))),
+						{MetaInt, _} = string:to_integer(Mis),
+						{ok, MetaInt};
+			   false-> analyzeOfO(T) 
+			end.
+
+
+
 
