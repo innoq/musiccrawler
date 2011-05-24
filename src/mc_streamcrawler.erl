@@ -13,7 +13,7 @@
 
 %% API
 -export([
-         start_link/3,
+         start_link/4,
          start_link/2,
          stop/0
          ]).   
@@ -23,6 +23,7 @@
 
 -define(SERVER, ?MODULE).
 -define(DEFAULT_PORT, 80).
+-define(DEFAULT_FILE, "/Users/martinh/Temp/out.mp3").
 
 -record(state, {port, sofar, filep, lsock, gotheader=false, metaint=0}).
 
@@ -37,13 +38,13 @@
 %%  Pid = pid()
 %% @end
 %%--------------------------------------------------------------------
-start_link(Port, Host, Location) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [Port, Host, Location], []).
+start_link(Port, Host, Location, File) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [Port, Host, Location, File], []).
 
 %% @spec start_link() -> {ok, Pid}
 %% @doc Calls `start_link(Port)' using the default port.      
 start_link(Host, Location) ->
-	start_link(?DEFAULT_PORT, Host, Location).
+	start_link(?DEFAULT_PORT, Host, Location, ?DEFAULT_FILE).
 
 %%--------------------------------------------------------------------
 %% @doc Stops the server.
@@ -57,11 +58,11 @@ stop() ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([Port, Host, Location]) -> 
+init([Port, Host, Location, File]) -> 
 	GetStr = string:concat("GET ", string:concat(Location, " HTTP/1.0\r\nIcy-Metadata: 1\r\n\r\n"))	,
 	io:format("~s~n", [GetStr]),				
-	{ok, Socket} = gen_tcp:connect(Host, 80, [binary, {packet, 0}, {packet_size, 16384}]),
-	{ok, FileP} = file:open("/Users/martinh/Temp/out.str", [raw, write, binary]),
+	{ok, Socket} = gen_tcp:connect(Host, 80, [binary, {packet, 0}]),
+	{ok, FileP} = file:open(File, [raw, write, binary]),
 	ok = gen_tcp:send(Socket, GetStr),
 	io:format("i:~p~n", [Socket]),
     {ok, #state{port = Port, sofar=[], lsock = Socket, filep=FileP}}.
@@ -78,14 +79,12 @@ handle_info({tcp, _Socket, Bin}, State) ->
 	Size = size(Bin),
 	case State#state.gotheader of
 		true -> 
-			file:write(State#state.filep, Bin),
 			{noreply, State#state{sofar = [Bin|State#state.sofar]}};
 		false -> 
 			case analyzeHeaders(Bin) of 
 				{ok, MetaInt} -> 	io:format("~nMetaInt:~p~n", [MetaInt] ),
 									{noreply, State#state{sofar = [Bin|State#state.sofar], gotheader=true, metaint=MetaInt}};
-				{notfound}	  ->	file:write(State#state.filep, Bin),
-									{noreply, State#state{sofar = [Bin|State#state.sofar]}}
+				{notfound}	  ->	{noreply, State#state{sofar = [Bin|State#state.sofar]}}
 			end
 	end;
 
@@ -100,7 +99,7 @@ handle_info(timeout, State) ->
     {noreply, State}.
 
 terminate(_Reason, State) -> 
-	finish(State#state.lsock, State#state.sofar, State#state.filep),
+	finish(State),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -110,17 +109,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
-
 %%--------------------------------------------------------------------
 %% @doc Finishing operations. Closing tcp connection and file-pointer & Stuff 
 %% 					
 %%
 %% @end
 %%--------------------------------------------------------------------
-finish(Sock, SoFar, FileP) ->
-	file:close(FileP),
-	gen_tcp:close(Sock),
-	list_to_binary(lists:reverse(SoFar)).
+finish(State) ->
+    file:write(State#state.filep, list_to_binary(lists:reverse(State#state.sofar))),
+	file:close(State#state.filep),
+	gen_tcp:close(State#state.lsock).
 
 %%--------------------------------------------------------------------
 %% @doc Analyze every header for some specific value and returning 
