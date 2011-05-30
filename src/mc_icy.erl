@@ -26,7 +26,15 @@
 -define(DEFAULT_FILE, "/tmp/out.mp3").
 -define(DEFAULT_META, "/tmp/out.txt").
 
--record(state, {port, sofar, filep, lsock, gotheader=false, metaint=0, metadata, metaoverlap=0, metafilep}).
+-record(state, {	port, 
+					sofar, 
+					filep, 
+					lsock, 
+					gotheader=false, 
+					metaint=0, 
+					interpret, 
+					title, 
+					metaoverlap=0}).
 
 %%%===================================================================
 %%% API
@@ -80,11 +88,12 @@ handle_cast(stop, State) ->
 handle_info({tcp, _Socket, Bin}, State) ->	
 	case State#state.gotheader of
 		true -> 
-			{NewBin, HeaderInfo, MetaOverlap} = extract(Bin, State),
-			{noreply, State#state{sofar = [NewBin|State#state.sofar], metadata=HeaderInfo, metaoverlap=MetaOverlap}};
+			{NewBin, Metadata, MetaOverlap} = extract(Bin, State),
+			{Change, NewInterpret, NewTitle} = evaluateStreamtitle(Metadata, State#state.interpret, State#state.title),
+			{noreply, State#state{sofar = [NewBin|State#state.sofar], interpret=NewInterpret, title=NewTitle, metaoverlap=MetaOverlap}};
 		false -> 
 			case analyzeHeaders(Bin) of 
-				{ok, MetaInt} -> 	io:format("~nMetaInt:~p~n", [MetaInt] ),
+ 				{ok, MetaInt} -> 	%% io:format("~nMetaInt:~p~n", [MetaInt] ),
 									{noreply, State#state{gotheader=true, metaint=MetaInt}};
 				{notfound}	  ->	Bin = 1
 			end
@@ -113,11 +122,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 extract(Bin, State) -> 
 	New = size(Bin),
-	io:format("-------------~nNew_size:~p~n",[New]),
+%% 	io:format("-------------~nNew_size:~p~n",[New]),
 	SoFarSize = getsizeofbininlist(State#state.sofar),
 	case SoFarSize =:= 0 of
 		true ->  
-				io:format("1st_size->true~n"),
+%% 				io:format("1st_size->true~n"),
 				FrameFillSize =  0;  							
 				% RestSize =  State#state.metaint - FrameFillSize;
 		false -> 
@@ -141,7 +150,7 @@ extract(Bin, State) ->
 	% Overlp is a possible overlap of metadata from last package to this one
 	Ovrlp = State#state.metaoverlap,
 	
-	io:format("SoFarSize:~p / FrameFillSize:~p / RestSize:~p / Overlap: ~p~n", [SoFarSize, FrameFillSize, RestSize, Ovrlp]),
+%% 	io:format("SoFarSize:~p / FrameFillSize:~p / RestSize:~p / Overlap: ~p~n", [SoFarSize, FrameFillSize, RestSize, Ovrlp]),
 	if 
 		Ovrlp =:= 0, RestSize > 0 -> % When there's no overlap and room for data -> handle data
 			handleData(Bin, New, RestSize);
@@ -161,10 +170,9 @@ handleData(Bin, New, RestSize)
   	-> 
 		if 
 			New < RestSize ->  		% remember RestSize? If there's more/exact room for data then we give back just data
-					{Bin, [], 0};    
+					{Bin, <<>>, 0};    
 			New =:= RestSize -> 	% this is a perfect fit, but we should start with a overlap signaling the length byte (-1)
-					io:format("Perfect Fit~n"),
-					{Bin, [], -1};	
+ 					{Bin, <<>>, -1};	
 			New > RestSize 	-> 		% so we have a bit metadata in there! Split it and give the meta to handlemeta			
 				{BinTemp, MetaDataTemp} = split_binary(Bin, RestSize),
 				{BinNew, MetaData, MetaOverlap} = handleMeta(MetaDataTemp),
@@ -184,19 +192,19 @@ handleMeta(Bin)
 	{Byte,Rest} = split_binary(Bin, 1),
 	SizeOfMeta = binary:decode_unsigned(Byte) * 16,
 	RestSize = size(Rest),
-	io:format("---~nMetahandling~nMetaSize:~p - RestSize:~p BinSize:~p~n", [SizeOfMeta, RestSize, size(Bin)]),
+%% 	io:format("---~nMetahandling~nMetaSize:~p - RestSize:~p BinSize:~p~n", [SizeOfMeta, RestSize, size(Bin)]),
 	if 	
 		SizeOfMeta =:= 0 
 		  		-> {Rest, <<>>, 0};			
 		RestSize > SizeOfMeta 
 		  		-> {Meta, Data} = split_binary(Rest, SizeOfMeta),
-				   io:format("Return:~p~n - Meta: ~p / Data:~p~n", [binary_to_list(Meta), size(Meta), size(Data)]),
+%% 				   io:format("Return:~s~n - Meta: ~p / Data:~p~n", [binary_to_list(Meta), size(Meta), size(Data)]),
 				   {Data, Meta, 0};		% 0 at end means no overlap of metadata
 		RestSize =:= SizeOfMeta ->
-		  		   io:format("Return only Meta =:=:~p~n - Meta: ~p~n", [binary_to_list(Rest), size(Rest)]),
+%% 		  		   io:format("Return only Meta =:=:~s~n - Meta: ~p~n", [binary_to_list(Rest), size(Rest)]),
 		  		   {<<>>, Rest, 0};	   % 0 at end means no overlap of metadata, all is Meta
 		RestSize < SizeOfMeta -> 
-					io:format("Return only Meta ovr:~p~n - Meta: ~p~n", [binary_to_list(Rest), size(Rest)]),
+%% 					io:format("Return only Meta ovr:~s~n - Meta: ~p~n", [binary_to_list(Rest), size(Rest)]),
 					{<<>>, Rest, SizeOfMeta - RestSize}  %% Calc. Value at end means is overlap of metadata, all is Meta   
 	end.
 
@@ -214,7 +222,7 @@ handleMeta(Bin, Ovrlp)
 		true -> 	handleMeta(Bin);  
 					 
 		false ->	{Meta, Data} = split_binary(Bin, Ovrlp),
-					io:format("handle Meta with Overlap: ~p~n", [{size(Meta), size(Data)}]),
+%% 					io:format("handle Meta with Overlap: ~p~n", [{size(Meta), size(Data)}]),
 					{Data, Meta, 0}
 	end.
 
@@ -268,5 +276,16 @@ analyzeOfO([H|T])
 			end.
 
 
+evaluateStreamtitle (Meta, InterpretOld, TitleOld) -> 
+	case size(Meta) > 2 of
+		true ->
+				Str = string:sub_word(binary_to_list(Meta), 2, $'),
+				{Int,T} = erlang:list_to_tuple([string:strip(I) || I <- string:tokens(Str, "-")]),
+				io:format("~nInterpret:~p| Title:~p|~n", [Int, T]),
+				Changed = true xor string:equal(Int, InterpretOld) and string:equal(T, TitleOld), 
+				{Changed, Int,T};	
+		false -> {false, InterpretOld, TitleOld}
+	end.
+		
 
 
