@@ -7,11 +7,13 @@ A gen_server that connects to a stream and reads the sent data into a File.
 Load: 
 			code:load_file(mc_icy).
 Start:      Prototypical Start:
-			mc_icy(<Port>, <Stream-Host>, <Stream-Url>, <File: >).
+			mc_icy(<Port>, <Stream-Host>, <Stream-Url>, <FilePath>).
 			OR
-			mc_icy(<Stream-Host>, <Stream-Url>).      %% Default: Port:80, File: "/tmp/out.mp3"
+			mc_icy(<Stream-Host>, <Stream-Url>).      %% Default: Port:80, File: "/tmp/"
 			For Example:
 			mc_icy:start_link("scfire-mtc-aa03.stream.aol.com", "/stream/1018").
 			
 Stop:		mc_icy:stop().
+
+
  

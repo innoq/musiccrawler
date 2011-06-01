@@ -22,13 +22,15 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
+-define(STRTITLECONST, "StreamTitle='").
+-define(STRURLCONST, "';StreamUrl").
 -define(DEFAULT_PORT, 80).
--define(DEFAULT_FILE, "/tmp/out.mp3").
--define(DEFAULT_META, "/tmp/out.txt").
+-define(DEFAULT_FILE, "/tmp/").
+-define(METADATA_DEF, " HTTP/1.0\r\nIcy-Metadata: 1\r\n\r\n").
 
 -record(state, {	port, 
 					sofar, 
-					filep, 
+					filepath, 
 					lsock, 
 					gotheader=false, 
 					metaint=0, 
@@ -67,33 +69,49 @@ stop() ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([Port, Host, Location, File]) -> 
-	GetStr = string:concat("GET ", string:concat(Location, " HTTP/1.0\r\nIcy-Metadata: 1\r\n\r\n"))	,
-	io:format("~s~n", [GetStr]),				
-	{ok, Socket} = gen_tcp:connect(Host, 80, [binary, {packet, 0}]),
-	{ok, FileP} = file:open(File, [raw, write, binary]),
-%	{ok, metafilep} = file:open(?, [raw, write, binary]),
+init([Port, Host, Location, FilePath]) -> 
+	GetStr = string:concat("GET ", string:concat(Location, ?METADATA_DEF))	,
+	{ok, Socket} = gen_tcp:connect(Host, ?DEFAULT_PORT, [binary, {packet, 0}]),
 	ok = gen_tcp:send(Socket, GetStr),
-	io:format("i:~p~n", [Socket]),
-    {ok, #state{port = Port, sofar=[], lsock = Socket, filep=FileP}}.
+    {ok, #state{port = Port, sofar=[], lsock = Socket, filepath=FilePath}}.
 
 handle_call(_,_,State) ->
-	io:format("hc:~p~n", [call]),
 	{reply, {ok, State}}.
 
 handle_cast(stop, State) ->
-%	io:format("hc:~p~n", [State#state.sofar]),
     {stop, normal, State}.
 
-handle_info({tcp, _Socket, Bin}, State) ->	
+handle_info({tcp, _Socket, Bin}, State) ->
+	%% First we need to check for the initial http-Headers of the Shoutcast-Stream
 	case State#state.gotheader of
-		true -> 
+		%% true is the standard case, where we already have already analyzed the http-Headers
+		true ->
 			{NewBin, Metadata, MetaOverlap} = extract(Bin, State),
 			{Change, NewInterpret, NewTitle} = evaluateStreamtitle(Metadata, State#state.interpret, State#state.title),
-			{noreply, State#state{sofar = [NewBin|State#state.sofar], interpret=NewInterpret, title=NewTitle, metaoverlap=MetaOverlap}};
+			%% Change marks a new piece of music, 
+			%% so let's put out the old to file or whereever and record the new one
+			case Change of 
+				true -> 
+						% This is a bit complicated, when we want to write a file we: 
+						% 1st have to add the most recent bin message
+						StateNew = State#state{sofar = [NewBin|State#state.sofar]},
+						% 2nd: Calculate how much bytes we need to leave to the next round (to keep correct position) 
+						TotSize = getsizeofbininlist(StateNew#state.sofar),   
+						RestSize = (TotSize rem StateNew#state.metaint) + StateNew#state.metaint,		  
+						% 3rd Then split restsize-part of the whole binary for next file
+						{_, RestBin} = split_binary(list_to_binary(lists:reverse(StateNew#state.sofar)), TotSize - RestSize),
+						% 4th write file with what we have
+						finishFile(StateNew),
+						% Last: Return new state with restbin
+						{noreply, State#state{sofar = [RestBin], interpret=NewInterpret, title=NewTitle, metaoverlap=MetaOverlap}};
+				false -> 
+						{noreply, State#state{sofar = [NewBin|State#state.sofar], interpret=NewInterpret, title=NewTitle, metaoverlap=MetaOverlap}}
+			end;
+
+		%% false: we need to analyze/expect http-Headers first (one time init)
 		false -> 
 			case analyzeHeaders(Bin) of 
- 				{ok, MetaInt} -> 	%% io:format("~nMetaInt:~p~n", [MetaInt] ),
+ 				{ok, MetaInt} -> 	
 									{noreply, State#state{gotheader=true, metaint=MetaInt}};
 				{notfound}	  ->	Bin = 1
 			end
@@ -122,25 +140,13 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 extract(Bin, State) -> 
 	New = size(Bin),
-%% 	io:format("-------------~nNew_size:~p~n",[New]),
 	SoFarSize = getsizeofbininlist(State#state.sofar),
 	case SoFarSize =:= 0 of
 		true ->  
-%% 				io:format("1st_size->true~n"),
 				FrameFillSize =  0;  							
-				% RestSize =  State#state.metaint - FrameFillSize;
 		false -> 
 				FrameFillSize = SoFarSize rem State#state.metaint
-%% 				if 
-%% 					FrameFillSize =:= 0 ->
-%% 						% Special Case, when Bin ends exactly at the border between 
-%% 						% data and meta, we have to manipulate the Restsize a bit to signal 
-%% 						% for immediate metahandling
-%% 						RestSize =  0;
-%% 					true ->
-%% 						% else just calculate it.
-%% 						RestSize =  State#state.metaint - FrameFillSize
-%% 				end
+
 	end,
 
 	RestSize =  State#state.metaint - FrameFillSize,
@@ -171,12 +177,11 @@ handleData(Bin, New, RestSize)
 		if 
 			New < RestSize ->  		% remember RestSize? If there's more/exact room for data then we give back just data
 					{Bin, <<>>, 0};    
-			New =:= RestSize -> 	% this is a perfect fit, but we should start with a overlap signaling the length byte (-1)
+			New =:= RestSize -> 	% this is a perfect fit, but we should start with a overlap signaling the Shoutcast length byte (-1)
  					{Bin, <<>>, -1};	
 			New > RestSize 	-> 		% so we have a bit metadata in there! Split it and give the meta to handlemeta			
 				{BinTemp, MetaDataTemp} = split_binary(Bin, RestSize),
 				{BinNew, MetaData, MetaOverlap} = handleMeta(MetaDataTemp),
-%				io:format("~nNew Data after Metahandling:~p~n", [size(<<BinTemp/binary,BinNew/binary>>)]),
 				{<<BinTemp/binary,BinNew/binary>>, MetaData, MetaOverlap}
 		end.
 
@@ -192,19 +197,16 @@ handleMeta(Bin)
 	{Byte,Rest} = split_binary(Bin, 1),
 	SizeOfMeta = binary:decode_unsigned(Byte) * 16,
 	RestSize = size(Rest),
-%% 	io:format("---~nMetahandling~nMetaSize:~p - RestSize:~p BinSize:~p~n", [SizeOfMeta, RestSize, size(Bin)]),
+%%   	io:format("---~nMetaSize:~p - RestSize:~p BinSize:~p~n", [SizeOfMeta, RestSize, size(	Bin)]),	
 	if 	
 		SizeOfMeta =:= 0 
 		  		-> {Rest, <<>>, 0};			
 		RestSize > SizeOfMeta 
 		  		-> {Meta, Data} = split_binary(Rest, SizeOfMeta),
-%% 				   io:format("Return:~s~n - Meta: ~p / Data:~p~n", [binary_to_list(Meta), size(Meta), size(Data)]),
 				   {Data, Meta, 0};		% 0 at end means no overlap of metadata
 		RestSize =:= SizeOfMeta ->
-%% 		  		   io:format("Return only Meta =:=:~s~n - Meta: ~p~n", [binary_to_list(Rest), size(Rest)]),
 		  		   {<<>>, Rest, 0};	   % 0 at end means no overlap of metadata, all is Meta
-		RestSize < SizeOfMeta -> 
-%% 					io:format("Return only Meta ovr:~s~n - Meta: ~p~n", [binary_to_list(Rest), size(Rest)]),
+		RestSize < SizeOfMeta ->
 					{<<>>, Rest, SizeOfMeta - RestSize}  %% Calc. Value at end means is overlap of metadata, all is Meta   
 	end.
 
@@ -219,24 +221,43 @@ handleMeta(Bin, Ovrlp)
   ->
 	case Ovrlp =:= -1 of
 					%% -1 is a signal for overlap starts with length byte, do a normal metahandling then
-		true -> 	handleMeta(Bin);  
-					 
-		false ->	{Meta, Data} = split_binary(Bin, Ovrlp),
-%% 					io:format("handle Meta with Overlap: ~p~n", [{size(Meta), size(Data)}]),
+		true -> 	
+					handleMeta(Bin);
+		false ->	
+					io:format("Alarm: Overlap of~p recognized - binsize is: ~p...~n", [Ovrlp, size(Bin)]),
+					{Meta, Data} = split_binary(Bin, Ovrlp),
+ 					io:format("handle Meta with Overlap: ~p~n", [{size(Meta), size(Data)}]),
 					{Data, Meta, 0}
+	end.
+
+%%--------------------------------------------------------------------
+%% @doc Finishing a File: Take Title-Information, open file.  
+%% write it and close the file again.
+%% @end
+%%--------------------------------------------------------------------
+finishFile(State) ->
+	case State#state.interpret /= undefined of 
+		true -> 
+			FileName = string:concat(State#state.filepath, string:concat(State#state.interpret, string:concat("-", string:concat(
+																											 			State#state.title, ".mp3")))),
+			io:format("Writing File: ~p~n", [FileName]),
+			{ok, FileP} = file:open(FileName, [raw, write, binary]),
+    		file:write(FileP, list_to_binary(lists:reverse(State#state.sofar))),
+			file:close(FileP),
+			{ok};
+		false -> 
+			{ok, nothingsdone}
 	end.
 
 
 %%--------------------------------------------------------------------
-%% @doc Finishing operations. Closing tcp connection and file-pointer & Stuff 
-%% 					
+%% @doc Finishing operations. Closing tcp connection  
 %%
 %% @end
 %%--------------------------------------------------------------------
 finish(State) ->
-    file:write(State#state.filep, list_to_binary(lists:reverse(State#state.sofar))),
-	file:close(State#state.filep),
 	gen_tcp:close(State#state.lsock).
+
 
 %%--------------------------------------------------------------------
 %% @doc Analyze every header for some specific value and returning 
@@ -252,15 +273,15 @@ analyzeHeaders(Bin) ->
 	end.
 
 %%-------------------------------------------------------------------------------------
-%% @doc
+%% @doc calculates the size of all binary in our memory
 %% @end
 %%-------------------------------------------------------------------------------------
 getsizeofbininlist(L) -> lists:sum([size(I)||I<-L]).
 
+
+
 %%-------------------------------------------------------------------------------------
 %% @doc Analyze One for one header of header-line-list for the "icy-metaint: " - value 
-%% 					
-%%
 %% @end
 %%------------------------------------------------------------------------------------
 
@@ -275,16 +296,28 @@ analyzeOfO([H|T])
 			   false-> analyzeOfO(T) 
 			end.
 
-
+%%-------------------------------------------------------------------------------------
+%% @doc Evaluates the Stream-Title. It cuts out the information from Metadata,
+%% (well, only if there is metadata) between StreamTitle=' and ';StreamUrl.
+%% We have only a "Changed"-State, when the old-Interpret is defined, else
+%% we like to assume, that this is the first piece of meta at all, and then it's not
+%% changed by our definition.
+%% @end
+%%------------------------------------------------------------------------------------
 evaluateStreamtitle (Meta, InterpretOld, TitleOld) -> 
-	case size(Meta) > 2 of
+	case size(Meta) > 14 of
 		true ->
-				Str = string:sub_word(binary_to_list(Meta), 2, $'),
-				{Int,T} = erlang:list_to_tuple([string:strip(I) || I <- string:tokens(Str, "-")]),
-				io:format("~nInterpret:~p| Title:~p|~n", [Int, T]),
-				Changed = true xor string:equal(Int, InterpretOld) and string:equal(T, TitleOld), 
+				Str = binary_to_list(Meta),
+				IndexOfStreamTitleEnd = string:str(Str, ?STRTITLECONST) + length(?STRTITLECONST),
+				StrTit = string:substr(Str, IndexOfStreamTitleEnd, string:str(Str, ?STRURLCONST)-IndexOfStreamTitleEnd), 
+				Index = string:str(StrTit, " - "),
+				Int = string:strip(string:substr(StrTit, 1, Index)),
+				T = string:strip(string:substr(StrTit, Index + 2)), 
+				Changed = (InterpretOld /= undefined) xor string:equal(Int, InterpretOld) and string:equal(T, TitleOld),
+				io:format("~nInterpret:~p  Title:~p and Changed is:~p~n ", [Int, T, Changed]),
 				{Changed, Int,T};	
-		false -> {false, InterpretOld, TitleOld}
+		false -> 
+				{false, InterpretOld, TitleOld}
 	end.
 		
 
