@@ -26,7 +26,7 @@
 %% --------------------------------------------------------------------
 -include_lib("eunit/include/eunit.hrl").
 -define(STATION_CONFIG, filename:absname("priv/rstations.config")).
--define(MUSICLIST_CONFIG, filename:absname("priv/mc.config")).
+-define(MUSICLIST_CONFIG, filename:absname("priv/music_wishlist.config")).
 -define(GENRE_CONFIG, filename:absname("priv/genres.config")).
 %% -define(STATION_CONFIG, filename:join([code:priv_dir(musiccrawler), "rstations.config"])).
 %% -define(MUSICLIST_CONFIG, filename:join([code:priv_dir(musiccrawler), "musiclist.config"])).
@@ -72,11 +72,30 @@ start() ->
 stop() ->
     gen_server:cast(?MODULE, stop).
 
+%%--------------------------------------------------------------------
+%% @doc returns a list of all configured radio-stations.
+%% @spec stations() -> []
+%% @end
+%%--------------------------------------------------------------------
 stations() ->
 	gen_server:call(?MODULE, {stations}).
 
+%%--------------------------------------------------------------------
+%% @doc returns a list of all configured radio-stations that
+%% are of the Genre given as argument "Genres".
+%% @spec stations([]) -> [] 
+%% @end
+%%--------------------------------------------------------------------
 stations(Genres) ->
 	gen_server:call(?MODULE, {stations, Genres}).
+
+%%--------------------------------------------------------------------
+%% @doc api to check if a specific title is on the wishlist
+%% are of the Genre given as argument "Genres".
+%% @spec stations([]) -> [] 
+%% @end
+%%--------------------------------------------------------------------
+%% music_on_list(Artist, Title) 
 
 
 %% --------------------------------------------------------------------
