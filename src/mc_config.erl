@@ -25,16 +25,20 @@
 %% Include files
 %% --------------------------------------------------------------------
 -include_lib("eunit/include/eunit.hrl").
--define(STATION_CONFIG, filename:join([code:priv_dir("musiccrawler"), "rstations.config"])).
--define(MUSICLIST_CONFIG, filename:join([code:priv_dir("musiccrawler"), "musiclist.config"])).
--define(GENRE_CONFIG, filename:join([code:priv_dir("musiccrawler"), "genres.config"])).
+-define(STATION_CONFIG, filename:absname("priv/rstations.config")).
+-define(MUSICLIST_CONFIG, filename:absname("priv/mc.config")).
+-define(GENRE_CONFIG, filename:absname("priv/genres.config")).
+%% -define(STATION_CONFIG, filename:join([code:priv_dir(musiccrawler), "rstations.config"])).
+%% -define(MUSICLIST_CONFIG, filename:join([code:priv_dir(musiccrawler), "musiclist.config"])).
+%% -define(GENRE_CONFIG, filename:join([code:priv_dir(musiccrawler), "genres.config"])).
+
 %% --------------------------------------------------------------------
 %% External exports
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([start_link/0]).
--export([start/0]).
+-export([start/0, stop/0, stations/0, stations/1]).
 
 %% ====================================================================
 %% External functions
@@ -67,6 +71,14 @@ start() ->
 %%--------------------------------------------------------------------
 stop() ->
     gen_server:cast(?MODULE, stop).
+
+stations() ->
+	gen_server:call(?MODULE, {stations}).
+
+stations(Genres) ->
+	gen_server:call(?MODULE, {stations, Genres}).
+
+
 %% --------------------------------------------------------------------
 %% Function: init/1
 %% Description: Initiates the server
@@ -76,9 +88,10 @@ stop() ->
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init([]) ->
-	{ok, [Stations]} = file:consult(?STATION_CONFIG),
-	{ok, [MusicL]} = file:consult(?MUSICLIST_CONFIG),
-	{ok, [ValidGenres]} = file:consult(?GENRE_CONFIG),
+	io:format("File: ~p~n~p~n~p~n:", [?STATION_CONFIG, ?MUSICLIST_CONFIG, ?GENRE_CONFIG]),
+	{ok, Stations} = file:consult(?STATION_CONFIG),
+	{ok, MusicL} = file:consult(?MUSICLIST_CONFIG),
+	{ok, ValidGenres} = file:consult(?GENRE_CONFIG),
 	true = check_stations(Stations, ValidGenres),
     {ok, #state{genres=ValidGenres, stations=Stations, musiclist=MusicL}}.
 
@@ -90,14 +103,13 @@ init([]) ->
 %% --------------------------------------------------------------------
 handle_call({stations}, From, State) ->
     Reply = State#state.stations,
-    {reply, Reply, State};
+    {reply, Reply, State}; 
 %% --------------------------------------------------------------------
 %% Function: handle_call/3
 %% Args:	{stations, [Genres]} ->  
 %% Description: Handling call messages, lists all configured stations, that are in the given genre-types-list
 %% Returns: {reply, Reply, State}          |
 %% --------------------------------------------------------------------
-
 handle_call({stations, Genre}, From, State) ->
     Reply = get_stations_by_genre(State#state.stations, Genre),
     {reply, Reply, State}.
@@ -110,8 +122,8 @@ handle_call({stations, Genre}, From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_cast(Msg, State) ->
-    {noreply, State}.
+handle_cast(stop, State) ->
+    {stop, normal, State}.
 
 %% --------------------------------------------------------------------
 %% Function: handle_info/2
@@ -131,7 +143,7 @@ handle_info(Info, State) ->
 terminate(Reason, State) ->
     ok.
 
-%% --------------------------------------------------------------------
+%% ---------------	-----------------------------------------------------
 %% Func: code_change/3
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
@@ -149,6 +161,7 @@ check_stations(Stations, Genres) ->
 	
 get_stations_by_genre(Stations, Genres) ->
 	[K || K = {_,X2,_,_,_} <- Stations, lists:member(X2, Genres)].
+	
 
 %% --------------------------------------------------------------------
 %%% Test functions
