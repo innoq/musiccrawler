@@ -38,7 +38,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([start_link/0]).
--export([start/0, stop/0, stations/0, stations/1]).
+-export([start/0, stop/0, stations/0, stations/1, on_wishlist/2]).
 
 %% ====================================================================
 %% External functions
@@ -95,9 +95,8 @@ stations(Genres) ->
 %% @spec stations([]) -> [] 
 %% @end
 %%--------------------------------------------------------------------
-music_on_wishlist(Artist, Title) ->
+on_wishlist(Artist, Title) ->
 	gen_server:call(?MODULE, {wishlist, Artist, Title}).
-
 
 %% --------------------------------------------------------------------
 %% Function: init/1
@@ -138,9 +137,10 @@ handle_call({stations, Genre}, _, State) ->
 %% Function: handle_call/3
 %% Args:	{wishlist, Artist, Title} ->  
 %% Description: checks if the given Music-Piece is on our wishlist.
+%% The comparison is done in lowercase.
 %% Returns: {reply, Reply, State}          |
 %% --------------------------------------------------------------------
-handle_call({wishlist, Artist, Title}, From, State) ->
+handle_call({wishlist, Artist, Title}, _, State) ->
     Reply = check_on_wishlist(Artist, Title, State#state.musiclist),
     {reply, Reply, State}.
 
@@ -192,24 +192,25 @@ check_stations(Stations, Genres) ->
 get_stations_by_genre(Stations, Genres) ->
 	[K || K = {_,X2,_,_,_} <- Stations, lists:member(X2, Genres)].
 
+
 check_on_wishlist(Artist, Title, Wishlist) ->
 	ArtistPrep = string:to_lower(string:strip(Artist)),
 	TitlePrep = string:to_lower(string:strip(Title)),
 	try 	
-		{value, {_,T}}=lists:keysearch(ArtistPrep,1,transform_2_Lower(Wishlist)),
+		{value, {_,T}}=lists:keysearch(ArtistPrep,1,transform_2_lower(Wishlist)),
 		T = TitlePrep,
 		true
 	catch 
 		_:_ -> false
 	end.
 	
-transform_2_Lower(Tuples) ->
+transform_2_lower(Tuples) ->
 	Lower=[ [string:to_lower(Z1)||Z1<-tuple_to_list(Z)] || Z <- Tuples],
 	[list_to_tuple(L)||L<-Lower].
 	
 	
 	
-
+%% --------------------------------------------------------------------
 %%% Test functions
 %% --------------------------------------------------------------------
 
@@ -237,16 +238,32 @@ get_stations_bygenre_test() ->
 	[] = get_stations_by_genre(Stations, [wronggenre]),   % Empty when a wrong genre is given
 	ok.
 
-check_on_wishlist_test() -> 
+transform_2_lower_test() -> 
 	Y = [{"Granufunk","Der Himmel con Hollywood"},
 		 {"File Brazilia","Lieut. Gingivitis Shit"},
  		 {"Adam Shaikh","Emergence (Sub Dub Remix')"},
  	     {"Fresh Moods","Rhythm Breeze"}],
-	Y1 = transform_2_Lower(Y),
+	Y1 = transform_2_lower(Y),
 	{value, {"granufunk", "der himmel con hollywood"}} = lists:keysearch("granufunk", 1, Y1),
 	{value, {"adam shaikh", "emergence (sub dub remix')" }} = lists:keysearch("adam shaikh", 1, Y1),
-	false = lists:keysearch("Granufunk", 1, Y1).
-	
+	false = lists:keysearch("Granufunk", 1, Y1), 
+	ok.
 
-	
+
+check_on_wishlist_test() -> 
+	TestWishlist = [{"Granufunk","Der Himmel con Hollywood"},
+		 {"File Brazilia","Lieut. Gingivitis Shit"},
+ 		 {"Adam Shaikh","Emergence (Sub Dub Remix')"},
+ 	     {"Fresh Moods","Rhythm Breeze"}],
+
+	true = check_on_wishlist("Fresh Moods","Rhythm Breeze", TestWishlist),
+	true = check_on_wishlist("Granufunk","Der Himmel con Hollywood", TestWishlist),
+	false = check_on_wishlist("Granulat","Der Himmel con Hollywood", TestWishlist),    % Granulat is not found
+	false = check_on_wishlist("","", TestWishlist),    								   % Empty is not found
+	false = check_on_wishlist("Granufunk","Der Himmel con Bollywood", TestWishlist),   % Bollywood is not found
+	false = check_on_wishlist("","Der Himmel con Hollywood", TestWishlist),    		   % Empty is not found
+	false = check_on_wishlist("Granufunk","", TestWishlist),    					   % Empty is not found
+	ok.
+
+
 	
