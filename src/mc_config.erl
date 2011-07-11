@@ -95,7 +95,8 @@ stations(Genres) ->
 %% @spec stations([]) -> [] 
 %% @end
 %%--------------------------------------------------------------------
-%% music_on_list(Artist, Title) 
+music_on_wishlist(Artist, Title) ->
+	gen_server:call(?MODULE, {wishlist, Artist, Title}).
 
 
 %% --------------------------------------------------------------------
@@ -120,7 +121,7 @@ init([]) ->
 %% Description: lists all configured stations as record-list
 %% Returns: {reply, Reply, State}          |
 %% --------------------------------------------------------------------
-handle_call({stations}, From, State) ->
+handle_call({stations}, _, State) ->
     Reply = State#state.stations,
     {reply, Reply, State}; 
 %% --------------------------------------------------------------------
@@ -129,8 +130,18 @@ handle_call({stations}, From, State) ->
 %% Description: Handling call messages, lists all configured stations, that are in the given genre-types-list
 %% Returns: {reply, Reply, State}          |
 %% --------------------------------------------------------------------
-handle_call({stations, Genre}, From, State) ->
+handle_call({stations, Genre}, _, State) ->
     Reply = get_stations_by_genre(State#state.stations, Genre),
+    {reply, Reply, State};
+
+%% --------------------------------------------------------------------
+%% Function: handle_call/3
+%% Args:	{wishlist, Artist, Title} ->  
+%% Description: checks if the given Music-Piece is on our wishlist.
+%% Returns: {reply, Reply, State}          |
+%% --------------------------------------------------------------------
+handle_call({wishlist, Artist, Title}, From, State) ->
+    Reply = check_on_wishlist(Artist, Title, State#state.musiclist),
     {reply, Reply, State}.
 
 
@@ -151,7 +162,7 @@ handle_cast(stop, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_info(Info, State) ->
+handle_info(_, State) ->
     {noreply, State}.
 
 %% --------------------------------------------------------------------
@@ -180,9 +191,25 @@ check_stations(Stations, Genres) ->
 	
 get_stations_by_genre(Stations, Genres) ->
 	[K || K = {_,X2,_,_,_} <- Stations, lists:member(X2, Genres)].
+
+check_on_wishlist(Artist, Title, Wishlist) ->
+	ArtistPrep = string:to_lower(string:strip(Artist)),
+	TitlePrep = string:to_lower(string:strip(Title)),
+	try 	
+		{value, {_,T}}=lists:keysearch(ArtistPrep,1,transform_2_Lower(Wishlist)),
+		T = TitlePrep,
+		true
+	catch 
+		_:_ -> false
+	end.
+	
+transform_2_Lower(Tuples) ->
+	Lower=[ [string:to_lower(Z1)||Z1<-tuple_to_list(Z)] || Z <- Tuples],
+	[list_to_tuple(L)||L<-Lower].
+	
+	
 	
 
-%% --------------------------------------------------------------------
 %%% Test functions
 %% --------------------------------------------------------------------
 
@@ -208,5 +235,18 @@ get_stations_bygenre_test() ->
 	L2 = get_stations_by_genre(Stations, Genres),
 	true = check_stations(L2, Genres2),					% All found of Correct genre
 	[] = get_stations_by_genre(Stations, [wronggenre]),   % Empty when a wrong genre is given
-	
 	ok.
+
+check_on_wishlist_test() -> 
+	Y = [{"Granufunk","Der Himmel con Hollywood"},
+		 {"File Brazilia","Lieut. Gingivitis Shit"},
+ 		 {"Adam Shaikh","Emergence (Sub Dub Remix')"},
+ 	     {"Fresh Moods","Rhythm Breeze"}],
+	Y1 = transform_2_Lower(Y),
+	{value, {"granufunk", "der himmel con hollywood"}} = lists:keysearch("granufunk", 1, Y1),
+	{value, {"adam shaikh", "emergence (sub dub remix')" }} = lists:keysearch("adam shaikh", 1, Y1),
+	false = lists:keysearch("Granufunk", 1, Y1).
+	
+
+	
+	
