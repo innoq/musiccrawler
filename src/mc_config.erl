@@ -120,7 +120,7 @@ init([]) ->
 	true = check_stations(Stations, ValidGenres),
 	Ml = transform_2_lower(MusicL),
 	io:format("Searching for: ~p~n", [Ml]),
-    {ok, #state{genres=ValidGenres, stations=Stations, musiclist=MusicL}}.
+    {ok, #state{genres=ValidGenres, stations=Stations, musiclist=Ml}}.
 
 %% --------------------------------------------------------------------
 %% Function: handle_call/3
@@ -204,13 +204,17 @@ get_stations_by_genre(Stations, Genres) ->
 check_on_wishlist(Artist, Title, Wishlist) ->
 	ArtistPrep = string:to_lower(string:strip(Artist)),
 	TitlePrep = string:to_lower(string:strip(Title)),
-	io:format("~p~p~n", [ArtistPrep, TitlePrep]),
-	try 	
-		{value, {_,T}}=lists:keysearch(ArtistPrep,1,transform_2_lower(Wishlist)),
-		T = TitlePrep,
-		true
-	catch 
-		_:_ -> false
+	case lists:keysearch(ArtistPrep,1,Wishlist) of
+		{value, {_,T}} ->
+					try 
+						T = TitlePrep,	%% If this line works, and does throw any foul tomatoes, its found!
+						true
+					catch 		
+						%% if there's an exception, we have an artist but with another title, 
+						%% so try the same without that recently found key
+						_:_ -> check_on_wishlist(Artist, Title, lists:keydelete(ArtistPrep, 1, Wishlist))
+					end;
+		false -> false
 	end.
 	
 transform_2_lower(Tuples) ->
@@ -260,19 +264,28 @@ transform_2_lower_test() ->
 
 
 check_on_wishlist_test() -> 
-	TestWishlist = [{"Granufunk","Der Himmel con Hollywood"},
-		 {"File Brazilia","Lieut. Gingivitis Shit"},
- 		 {"Adam Shaikh","Emergence (Sub Dub Remix')"},
+	Twl = [{"Granufunk","Der Himmel con Hollywood"},
+		 {" File Brazilia","Lieut. Gingivitis Shit"},
+ 		 {"Adam Shaikh ","Emergence (Sub Dub Remix')"},
  	     {"Fresh Moods","Rhythm1"},
 		 {"Fresh Moods","Rhythm2"}],
 
+	TestWishlist = transform_2_lower(Twl),
 	true = check_on_wishlist("Fresh Moods","Rhythm1", TestWishlist),
 	true = check_on_wishlist("Fresh Moods","Rhythm2", TestWishlist),
-	true = check_on_wishlist("Granufunk","Der Himmel con Hollywood", TestWishlist),
+	true = check_on_wishlist("FrESh MoOds","RhYthm1", TestWishlist),
+	true = check_on_wishlist("FRESh MOOds","RHythm2", TestWishlist),
+	true = check_on_wishlist("Fresh Moods","Rhythm2", TestWishlist),
+	true = check_on_wishlist(" GRANUfuNk ","Der Himmel con Hollywood", TestWishlist),
+	true = check_on_wishlist(" GRANUfuNk ","Der HIMMEl con Hollywood", TestWishlist),
+	false = check_on_wishlist("Fresh Moods","Rhythm3", TestWishlist),
+	false = check_on_wishlist("Fresh Moods"," Rhythm3 ", TestWishlist),
+	false = check_on_wishlist(" FRESH Moods"," Rhythm3 ", TestWishlist),
 	false = check_on_wishlist("Granulat","Der Himmel con Hollywood", TestWishlist),    % Granulat is not found
 	false = check_on_wishlist("","", TestWishlist),    								   % Empty is not found
 	false = check_on_wishlist("Granufunk","Der Himmel con Bollywood", TestWishlist),   % Bollywood is not found
-	false = check_on_wishlist("","Der Himmel con Hollywood", TestWishlist),    		   % Empty is not found
+	false = check_on_wishlist("Krampf","Der Himmel con Hollywood", TestWishlist),    		   % Empty is not found
+	false = check_on_wishlist("Granufunk","Nix", TestWishlist),    					   % Empty is not found
 	false = check_on_wishlist("Granufunk","", TestWishlist),    					   % Empty is not found
 	ok.
 
