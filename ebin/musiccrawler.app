@@ -1,8 +1,14 @@
-{application,musiccrawler,
-             [{description,"Das ist der Musik Crawler"},
-              {vsn,"1"},
-              {registered,[]},
-              {applications,[kernel,stdlib]},
-              {mod,{musiccrawler_app,[]}},
-              {env,[]},
-              {modules,[mc_app,mc_config,mc_controller,mc_sup]}]}.
+{application, musiccrawler,
+ [
+  {description, "Das ist der Musik Crawler"},
+  {vsn, "stage 1"},
+  {modules, [
+  				mc_sup,
+  				mc_config,
+  				mc_incy
+  			]},
+  {registered, [mc_sup]},
+  {applications, [kernel,stdlib]},
+  {mod, { mc_app, []}},
+  {env, []}
+ ]}.

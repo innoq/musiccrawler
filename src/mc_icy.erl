@@ -26,6 +26,7 @@
 %% API
 -export([
          start_link/4,
+		 start_link/3,
          start_link/2,
          stop/0
          ]).   
@@ -63,6 +64,9 @@
 %%--------------------------------------------------------------------
 start_link(Port, Host, Location, File) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [Port, Host, Location, File], []).
+
+start_link(Host, Location, File) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [?DEFAULT_PORT, Host, Location, File], []).
 
 %% @spec start_link() -> {ok, Pid}
 %% @doc Calls `start_link(Port)' using the default port.      
@@ -248,8 +252,16 @@ handleMeta(Bin, Ovrlp)
 %% @end
 %%--------------------------------------------------------------------
 finishFile(State) ->
-	case State#state.interpret /= undefined of 
-		true -> 
+	Onwishlist = try
+		mc_config:on_wishlist(State#state.interpret, State#state.title)
+	catch 
+		_:_ -> io:format("WARNING: config-server is not started...~n"), 
+			   false
+	end,
+	
+	io:format("OnWishlist = ~p: ~p - ~p~n",[Onwishlist, State#state.interpret, State#state.title]),
+	if 
+		(State#state.interpret /= undefined) and Onwishlist -> 
 			FileName = string:concat(State#state.filepath, string:concat(State#state.interpret, string:concat("-", string:concat(
 																											 			State#state.title, ".mp3")))),
 			io:format("Writing File: ~p~n", [FileName]),
@@ -257,7 +269,7 @@ finishFile(State) ->
     		file:write(FileP, list_to_binary(lists:reverse(State#state.sofar))),
 			file:close(FileP),
 			{ok};
-		false -> 
+		true -> 
 			{ok, nothingsdone}
 	end.
 
@@ -326,7 +338,7 @@ evaluateStreamtitle (Meta, InterpretOld, TitleOld) ->
 				Int = string:strip(string:substr(StrTit, 1, Index)),
 				T = string:strip(string:substr(StrTit, Index + 2)), 
 				Changed = (InterpretOld /= undefined) xor string:equal(Int, InterpretOld) and string:equal(T, TitleOld),
-				io:format("~nInterpret:~p  Title:~p and Changed is:~p~n ", [Int, T, Changed]),
+				%io:format("~nInterpret:~p  Title:~p and Changed is:~p~n ", [Int, T, Changed]),
 				{Changed, Int,T};	
 		false -> 
 				{false, InterpretOld, TitleOld}

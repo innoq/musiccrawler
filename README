@@ -2,18 +2,6 @@ This is the Music-Crawler:
 A parallel Shoutcast-Search Engine for music-peaces of your wish, searching and stream the music-pieces you'd like
 to have @ Home from your specified radio-streams.
 
-1. Prototypical gen_server
-A gen_server that connects to a stream and reads the sent data into a File.
-Load: 
-			code:load_file(mc_icy).
-Start:      Prototypical Start:
-			mc_icy(<Port>, <Stream-Host>, <Stream-Url>, <FilePath>).
-			OR
-			mc_icy(<Stream-Host>, <Stream-Url>).      %% Default: Port:80, File: "/tmp/"
-			For Example:
-			mc_icy:start_link("scfire-mtc-aa03.stream.aol.com", "/stream/1018").
-			
-Stop:		mc_icy:stop().
-
+See Wiki for more Details.
 
  
