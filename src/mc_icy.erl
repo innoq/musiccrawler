@@ -33,10 +33,10 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
-
+-include_lib("eunit/include/eunit.hrl").
 -define(SERVER, ?MODULE).
 -define(STRTITLECONST, "StreamTitle='").
--define(STRURLCONST, "';StreamUrl").
+-define(STRURLCONST, "';Stre").
 -define(DEFAULT_PORT, 80).
 -define(DEFAULT_FILE, "/tmp/").
 -define(METADATA_DEF, " HTTP/1.0\r\nIcy-Metadata: 1\r\n\r\n").
@@ -331,6 +331,7 @@ analyzeOfO([H|T])
 evaluateStreamtitle (Meta, InterpretOld, TitleOld) -> 
 	case size(Meta) > 14 of
 		true ->
+				io:format("Stream_meta: ~s~n", [Meta]),
 				Str = binary_to_list(Meta),
 				IndexOfStreamTitleEnd = string:str(Str, ?STRTITLECONST) + length(?STRTITLECONST),
 				StrTit = string:substr(Str, IndexOfStreamTitleEnd, string:str(Str, ?STRURLCONST)-IndexOfStreamTitleEnd), 
@@ -344,5 +345,11 @@ evaluateStreamtitle (Meta, InterpretOld, TitleOld) ->
 				{false, InterpretOld, TitleOld}
 	end.
 		
+%% "StreamTitle='Mandrillus Sphynx - Zanya';Stre"
 
 
+evaluateStreamtitle_test() ->
+	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';Stre"), "", ""),
+	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';StreamURL=http://somafm.com/groovesalad"), "", ""),
+	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';StreamURL=http://somafm.com/groovesalad"), "", ""),
+	ok.
