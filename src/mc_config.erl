@@ -38,7 +38,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([start_link/0]).
--export([start/0, stop/0, stations/0, stations/1, on_wishlist/2]).
+-export([start/0, stop/0, restart/0, stations/0, stations/1, on_wishlist/2]).
 
 %% ====================================================================
 %% External functions
@@ -71,6 +71,13 @@ start() ->
 %%--------------------------------------------------------------------
 stop() ->
     gen_server:cast(?MODULE, stop).
+
+restart() ->
+	stop(),
+	timer:sleep(1000),
+	io:format("Server stopped .. Restart issued now!~n"),
+	start().
+	
 
 %%--------------------------------------------------------------------
 %% @doc returns a list of all configured radio-stations.
@@ -107,11 +114,12 @@ on_wishlist(Artist, Title) ->
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init([]) ->
-	io:format("File: ~p~n~p~n~p~n:", [?STATION_CONFIG, ?MUSICLIST_CONFIG, ?GENRE_CONFIG]),
 	{ok, Stations} = file:consult(?STATION_CONFIG),
 	{ok, MusicL} = file:consult(?MUSICLIST_CONFIG),
 	{ok, ValidGenres} = file:consult(?GENRE_CONFIG),
 	true = check_stations(Stations, ValidGenres),
+	Ml = transform_2_lower(MusicL),
+	io:format("Searching for: ~p~n", [Ml]),
     {ok, #state{genres=ValidGenres, stations=Stations, musiclist=MusicL}}.
 
 %% --------------------------------------------------------------------
@@ -196,6 +204,7 @@ get_stations_by_genre(Stations, Genres) ->
 check_on_wishlist(Artist, Title, Wishlist) ->
 	ArtistPrep = string:to_lower(string:strip(Artist)),
 	TitlePrep = string:to_lower(string:strip(Title)),
+	io:format("~p~p~n", [ArtistPrep, TitlePrep]),
 	try 	
 		{value, {_,T}}=lists:keysearch(ArtistPrep,1,transform_2_lower(Wishlist)),
 		T = TitlePrep,
@@ -205,7 +214,7 @@ check_on_wishlist(Artist, Title, Wishlist) ->
 	end.
 	
 transform_2_lower(Tuples) ->
-	Lower=[ [string:to_lower(Z1)||Z1<-tuple_to_list(Z)] || Z <- Tuples],
+	Lower=[ [string:to_lower(string:strip(Z1))||Z1<-tuple_to_list(Z)] || Z <- Tuples],
 	[list_to_tuple(L)||L<-Lower].
 	
 	
@@ -254,9 +263,11 @@ check_on_wishlist_test() ->
 	TestWishlist = [{"Granufunk","Der Himmel con Hollywood"},
 		 {"File Brazilia","Lieut. Gingivitis Shit"},
  		 {"Adam Shaikh","Emergence (Sub Dub Remix')"},
- 	     {"Fresh Moods","Rhythm Breeze"}],
+ 	     {"Fresh Moods","Rhythm1"},
+		 {"Fresh Moods","Rhythm2"}],
 
-	true = check_on_wishlist("Fresh Moods","Rhythm Breeze", TestWishlist),
+	true = check_on_wishlist("Fresh Moods","Rhythm1", TestWishlist),
+	true = check_on_wishlist("Fresh Moods","Rhythm2", TestWishlist),
 	true = check_on_wishlist("Granufunk","Der Himmel con Hollywood", TestWishlist),
 	false = check_on_wishlist("Granulat","Der Himmel con Hollywood", TestWishlist),    % Granulat is not found
 	false = check_on_wishlist("","", TestWishlist),    								   % Empty is not found
