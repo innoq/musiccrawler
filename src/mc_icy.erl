@@ -115,7 +115,8 @@ handle_info({tcp, _Socket, Bin}, State) ->
 						TotSize = getsizeofbininlist(StateNew#state.sofar),   
 						RestSize = (TotSize rem StateNew#state.metaint) + StateNew#state.metaint,		  
 						% 3rd Then split restsize-part of the whole binary for next file
-						{_, RestBin} = split_binary(list_to_binary(lists:reverse(StateNew#state.sofar)), TotSize - RestSize),
+						Num = TotSize-RestSize, 
+						 <<_:Num/binary,RestBin/binary>> = list_to_binary(lists:reverse(StateNew#state.sofar)),
 						% 4th write file with what we have
 						finishFile(StateNew),
 						% Last: Return new state with restbin
@@ -195,8 +196,8 @@ handleData(Bin, New, RestSize)
 					{Bin, <<>>, 0};    
 			New =:= RestSize -> 	% this is a perfect fit, but we should start with a overlap signaling the Shoutcast length byte (-1)
  					{Bin, <<>>, -1};	
-			New > RestSize 	-> 		% so we have a bit metadata in there! Split it and give the meta to handlemeta			
-				{BinTemp, MetaDataTemp} = split_binary(Bin, RestSize),
+			New > RestSize 	-> 		% so we have a bit metadata in there! Split it and give the meta to handlemeta
+				 <<BinTemp:RestSize/binary,MetaDataTemp/binary>> = Bin, 
 				{BinNew, MetaData, MetaOverlap} = handleMeta(MetaDataTemp),
 				{<<BinTemp/binary,BinNew/binary>>, MetaData, MetaOverlap}
 		end.
@@ -210,7 +211,7 @@ handleData(Bin, New, RestSize)
 %%-------------------------------------------------------------------------------------	
 handleMeta(Bin) 
   ->
-	{Byte,Rest} = split_binary(Bin, 1),
+	<<Byte:1/binary,Rest/binary>> = Bin,
 	SizeOfMeta = binary:decode_unsigned(Byte) * 16,
 	RestSize = size(Rest),
 %%   	io:format("---~nMetaSize:~p - RestSize:~p BinSize:~p~n", [SizeOfMeta, RestSize, size(	Bin)]),	
@@ -218,7 +219,8 @@ handleMeta(Bin)
 		SizeOfMeta =:= 0 
 		  		-> {Rest, <<>>, 0};			
 		RestSize > SizeOfMeta 
-		  		-> {Meta, Data} = split_binary(Rest, SizeOfMeta),
+		  		-> 
+					<<Meta:SizeOfMeta/binary,Data/binary>> = Rest,
 				   {Data, Meta, 0};		% 0 at end means no overlap of metadata
 		RestSize =:= SizeOfMeta ->
 		  		   {<<>>, Rest, 0};	   % 0 at end means no overlap of metadata, all is Meta
@@ -241,7 +243,7 @@ handleMeta(Bin, Ovrlp)
 					handleMeta(Bin);
 		false ->	
 					io:format("Alarm: Overlap of~p recognized - binsize is: ~p...~n", [Ovrlp, size(Bin)]),
-					{Meta, Data} = split_binary(Bin, Ovrlp),
+					<<Meta:Ovrlp/binary,Data/binary>> = Bin,
  					io:format("handle Meta with Overlap: ~p~n", [{size(Meta), size(Data)}]),
 					{Data, Meta, 0}
 	end.
@@ -270,7 +272,8 @@ finishFile(State) ->
 			file:close(FileP),
 			{ok};
 		true -> 
-			{ok, nothingsdone}
+%% 			garbage_collect(), 
+			{ok, nothingsdone} 
 	end.
 
 
@@ -352,4 +355,5 @@ evaluateStreamtitle_test() ->
 	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';Stre"), "", ""),
 	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';StreamURL=http://somafm.com/groovesalad"), "", ""),
 	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';StreamURL=http://somafm.com/groovesalad"), "", ""),
+	evaluateStreamtitle(list_to_binary("rl='http://www.181.fm';^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@"), "", ""),
 	ok.
