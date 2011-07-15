@@ -49,7 +49,8 @@
 					metaint=0, 
 					interpret, 
 					title, 
-					metaoverlap=0}).
+					metaoverlap=0,
+					metabeforeoverlap}).
 
 %%%===================================================================
 %%% API
@@ -89,7 +90,8 @@ init([Port, Host, Location, FilePath]) ->
 	GetStr = string:concat("GET ", string:concat(Location, ?METADATA_DEF))	,
 	{ok, Socket} = gen_tcp:connect(Host, ?DEFAULT_PORT, [binary, {packet, 0}]),
 	ok = gen_tcp:send(Socket, GetStr),
-    {ok, #state{port = Port, sofar=[], lsock = Socket, filepath=FilePath}}.
+	MetaInit = <<>>,
+    {ok, #state{port = Port, sofar=[], lsock = Socket, filepath=FilePath, metabeforeoverlap=MetaInit}}.
 
 handle_call(_,_,State) ->
 	{reply, {ok, State}}.
@@ -103,7 +105,17 @@ handle_info({tcp, _Socket, Bin}, State) ->
 		%% true is the standard case, where we already have already analyzed the http-Headers
 		true ->
 			{NewBin, Metadata, MetaOverlap} = extract(Bin, State),
-			{Change, NewInterpret, NewTitle} = evaluateStreamtitle(Metadata, State#state.interpret, State#state.title),
+			case MetaOverlap =:= 0 of
+				true -> 
+						Md = list_to_binary([State#state.metabeforeoverlap,Metadata]),
+						{Change, NewInterpret, NewTitle} = evaluateStreamtitle(Md, State#state.interpret, State#state.title),
+						MetaSave = <<>>;
+				false ->
+						Change = false,
+						NewInterpret = State#state.interpret,
+						NewTitle = State#state.title,
+						MetaSave = Metadata
+			end,
 			%% Change marks a new piece of music, 
 			%% so let's put out the old to file or whereever and record the new one
 			case Change of 
@@ -120,9 +132,11 @@ handle_info({tcp, _Socket, Bin}, State) ->
 						% 4th write file with what we have
 						finishFile(StateNew),
 						% Last: Return new state with restbin
-						{noreply, State#state{sofar = [RestBin], interpret=NewInterpret, title=NewTitle, metaoverlap=MetaOverlap}};
+						{noreply, State#state{sofar = [RestBin], interpret=NewInterpret, 
+											  title=NewTitle, metaoverlap=MetaOverlap, metabeforeoverlap=MetaSave}};
 				false -> 
-						{noreply, State#state{sofar = [NewBin|State#state.sofar], interpret=NewInterpret, title=NewTitle, metaoverlap=MetaOverlap}}
+						{noreply, State#state{sofar = [NewBin|State#state.sofar], interpret=NewInterpret, 
+											  title=NewTitle, metaoverlap=MetaOverlap, metabeforeoverlap=MetaSave}}
 			end;
 
 		%% false: we need to analyze/expect http-Headers first (one time init)
@@ -155,6 +169,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
+%%-------------------------------------------------------------------------------------
+%% @doc extract method
+%% @end
+%%-------------------------------------------------------------------------------------
 extract(Bin, State) -> 
 	New = size(Bin),
 	SoFarSize = getsizeofbininlist(State#state.sofar),
@@ -348,12 +366,50 @@ evaluateStreamtitle (Meta, InterpretOld, TitleOld) ->
 				{false, InterpretOld, TitleOld}
 	end.
 		
-%% "StreamTitle='Mandrillus Sphynx - Zanya';Stre"
+
+
+%%------------------------------------------------------------------------------------
+%%------ Test-Functions --------------------------------------------------------------
+%%------------------------------------------------------------------------------------
 
 
 evaluateStreamtitle_test() ->
 	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';Stre"), "", ""),
 	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';StreamURL=http://somafm.com/groovesalad"), "", ""),
 	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';StreamURL=http://somafm.com/groovesalad"), "", ""),
-	evaluateStreamtitle(list_to_binary("rl='http://www.181.fm';^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@"), "", ""),
+%% 	evaluateStreamtitle(list_to_binary("rl='http://www.181.fm';^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@"), "", ""),
 	ok.
+
+
+%% "Morcheeba - The Sea';StreamU", "rl='http://www.181.fm';^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@"
+%% "StreamTitle='Mandrillus Sphynx - Zanya';Stre"
+
+normal_test() ->
+	MetaInit = <<>>,
+	State = #state{gotheader=true, metaint=40, sofar=[], metabeforeoverlap=MetaInit},
+	Data = <<1,2,3,4,5,6,7,8,9,10,1,2,3,4,5,6,7,8,9,10,1,2,3,4,5,6,7,8,9,10,1,2,3,4,5,6,7,8,9,10>>,
+	M1 = list_to_binary("StreamTitle='Morcheeba - The Sea';StreamUrl='http://www.181.fm';^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@"),
+	L3 = trunc((size(M1))/16),
+	M3 = list_to_binary([Data, <<L3/integer>>, M1]),
+	{noreply, State2} = handle_info({tcp, 1, M3}, State),
+	io:format("1st: ~p~n", [State2]),
+	{noreply, State3} = handle_info({tcp, 1, Data}, State2),
+	io:format("2nd: ~p~n", [State3]),
+	true = string:equal(State3#state.interpret, "Morcheeba"),
+	true = string:equal(State3#state.title, "The Sea").
+
+	
+ovrl_test () ->
+	MetaInit = <<>>,
+	State = #state{gotheader=true, metaint=20, sofar=[], metabeforeoverlap=MetaInit},
+	Data = <<1,2,3,4,5,6,7,8,9,10,1,2,3,4,5,6,7,8,9,10>>,
+	M1 = list_to_binary("StreamTitle='Morcheeba - The Sea';StreamU"),
+	M2 = list_to_binary([list_to_binary("rl='http://www.181.fm';^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@"), Data]),
+	L3 = trunc((size(M1) + size(M2))/16),
+	M3 = list_to_binary([Data, <<L3/integer>>, M1]),
+	{noreply, State2} = handle_info({tcp, 1, M3}, State),
+	io:format("1st: ~p~n", [State2]),
+	{noreply, State3} = handle_info({tcp, 1, M2}, State2),
+	io:format("2nd: ~p~n", [State3]),
+	true = string:equal(State3#state.interpret, "Morcheeba"),
+	true = string:equal(State3#state.title, "The Sea").
