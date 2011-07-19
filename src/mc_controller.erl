@@ -1,3 +1,4 @@
+%%% -------------------------------------------------------------------
 %% Copyright 2011 Ulf Angermann, Martin Huber
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,8 +30,7 @@
 %% External exports
 
 %% gen_server callbacks
--export([init/1, start_link/0, start_child/2, terminate/2, start_search/0]).
-
+-export([init/1, start_link/0, start_child/2, terminate/2, start_search/1]).
 -define(SERVER, ?MODULE).
 
 
@@ -61,13 +61,19 @@ init([]) ->
 	{ok, {RestartStrategy, Children}}.
 	
 
- %% ===================================================================
+%% ===================================================================
 %% API
 %% ===================================================================
-
-start_search() ->
+%%% -------------------------------------------------------------------
+%% @doc start_search(FilePath) starts all processes on all radiostations and the
+%% to search for the music configured.
+%% i.e.: mc_controller:start_search("/Users/martinh/Music/musiccrawler/").
+%%  
+%% @end
+%%% -------------------------------------------------------------------
+start_search(FilePath) ->
 	L=mc_config:stations(),
-	start_search(L, "/Users/martinh/Music/musiccrawler/").
+	start_search(L, FilePath).
 
 
 %% ===================================================================

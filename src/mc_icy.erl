@@ -286,7 +286,7 @@ finishFile(State) ->
 			   false
 	end,
 	
-	io:format("Station: ~p - OnWishlist=~p: ~p - ~p~n",[State#state.rstation#rstation.name, Onwishlist, State#state.interpret, State#state.title]),
+	io:format("OnWishlist = ~p: Station: ~p - ~p-~p~n",[Onwishlist, State#state.rstation#rstation.name, State#state.interpret, State#state.title]),
 	if 
 		(State#state.interpret /= undefined) and Onwishlist -> 
 			FileName = string:concat(State#state.filepath, string:concat(State#state.interpret, string:concat("-", string:concat(
@@ -388,8 +388,8 @@ evaluateStreamtitle (Meta, InterpretOld, TitleOld) ->
 evaluateStreamtitle_test() ->
 	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';Stre"), "", ""),
 	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';StreamURL=http://somafm.com/groovesalad"), "", ""),
-	evaluateStreamtitle(list_to_binary("StreamTitle='Mandrillus Sphynx - Zanya';StreamURL=http://somafm.com/groovesalad"), "", ""),
-%% 	evaluateStreamtitle(list_to_binary("rl='http://www.181.fm';^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@"), "", ""),
+	evaluateStreamtitle(list_to_binary("StreamTitle='Schiller - Blind (with Anggun) [Atemlos: Deluxe Edition]';Stre"), "", ""),
+%%  	evaluateStreamtitle(list_to_binary("rl='http://www.181.fm';^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@^@"), "", ""),
 	ok.
 
 
