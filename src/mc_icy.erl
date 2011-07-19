@@ -41,6 +41,7 @@
 -define(STRURLCONST, "';Stre").
 -define(DEFAULT_PORT, 80).
 -define(DEFAULT_FILE, "/tmp/").
+-define(METAINTDEFAULT, 8192).
 -define(METADATA_DEF, " HTTP/1.0\r\nIcy-Metadata: 1\r\n\r\n").
 
 -record(state, {	rstation, 
@@ -146,9 +147,9 @@ handle_info({tcp, _Socket, Bin}, State) ->
 		%% false: we need to analyze/expect http-Headers first (one time init)
 		false -> 
 			case analyzeHeaders(Bin) of 
- 				{ok, MetaInt} -> 	
-									{noreply, State#state{gotheader=true, metaint=MetaInt}};
-				{notfound}	  ->	Bin = 1
+ 				{ok, MetaInt, BinRight} -> 	
+									{noreply, State#state{gotheader=true, metaint=MetaInt, sofar=[BinRight]}};
+				{notfound, BinRight}	->	{noreply, State#state{gotheader=false, sofar=[BinRight]}}
 			end
 	end;
 
@@ -283,7 +284,7 @@ finishFile(State) ->
 			   false
 	end,
 	
-	io:format("OnWishlist = ~p: ~p - ~p~n",[Onwishlist, State#state.interpret, State#state.title]),
+	io:format("Station: ~p - OnWishlist=~p: ~p - ~p~n",[State#rstation.name, Onwishlist, State#state.interpret, State#state.title]),
 	if 
 		(State#state.interpret /= undefined) and Onwishlist -> 
 			FileName = string:concat(State#state.filepath, string:concat(State#state.interpret, string:concat("-", string:concat(
@@ -315,10 +316,15 @@ finish(State) ->
 %% @end
 %%--------------------------------------------------------------------
 analyzeHeaders(Bin) ->
-	ListOfHeaders = string:tokens(binary_to_list(Bin), "\r\n"),
+	LoEol = string:rstr(binary_to_list(Bin), "\r\n")+1,
+	<<BinLeft:LoEol/binary,BinRight/binary>> = Bin,
+	ListOfHeaders = string:tokens(binary_to_list(BinLeft), "\r\n"),
+
+%% 	io:format("Headers:~n
+%% 		Loh~p~nLoEol~p~nBL~p~nBR~p~n~n", [ListOfHeaders, LoEol, BinLeft, BinRight]),
 	case analyzeOfO(ListOfHeaders) of 
-		{ok, Value} -> {ok, Value};
-		{notfound} ->  {notfound}
+		{ok, Value} -> {ok, Value, BinRight};
+		{notfound} ->  {notfound, BinRight}
 	end.
 
 %%-------------------------------------------------------------------------------------
