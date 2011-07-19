@@ -284,7 +284,7 @@ finishFile(State) ->
 			   false
 	end,
 	
-	io:format("Station: ~p - OnWishlist=~p: ~p - ~p~n",[State#rstation.name, Onwishlist, State#state.interpret, State#state.title]),
+	io:format("Station: ~p - OnWishlist=~p: ~p - ~p~n",[State#state.rstation#rstation.name, Onwishlist, State#state.interpret, State#state.title]),
 	if 
 		(State#state.interpret /= undefined) and Onwishlist -> 
 			FileName = string:concat(State#state.filepath, string:concat(State#state.interpret, string:concat("-", string:concat(
