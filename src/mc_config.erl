@@ -25,6 +25,7 @@
 %% Include files
 %% --------------------------------------------------------------------
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("../include/mc.hrl").
 -define(STATION_CONFIG, filename:absname("priv/rstations.config")).
 -define(MUSICLIST_CONFIG, filename:absname("priv/music_wishlist.config")).
 -define(GENRE_CONFIG, filename:absname("priv/genres.config")).
@@ -118,9 +119,10 @@ init([]) ->
 	{ok, MusicL} = file:consult(?MUSICLIST_CONFIG),
 	{ok, ValidGenres} = file:consult(?GENRE_CONFIG),
 	true = check_stations(Stations, ValidGenres),
+	Sl = transform_to_record(Stations, []),
 	Ml = transform_2_lower(MusicL),
 	io:format("Searching for: ~p~n", [Ml]),
-    {ok, #state{genres=ValidGenres, stations=Stations, musiclist=Ml}}.
+    {ok, #state{genres=ValidGenres, stations=Sl, musiclist=Ml}}.
 
 %% --------------------------------------------------------------------
 %% Function: handle_call/3
@@ -194,11 +196,16 @@ code_change(OldVsn, State, Extra) ->
 %% --------------------------------------------------------------------
 
 check_stations(Stations, Genres) ->	
-	BoolList=[lists:member(K, Genres) || {_,K,_,_,_}<-Stations],
+	BoolList=[lists:member(K, Genres) || #rstation{genre=K}<-Stations],
 	not lists:member(false, BoolList).
 	
 get_stations_by_genre(Stations, Genres) ->
-	[K || K = {_,X2,_,_,_} <- Stations, lists:member(X2, Genres)].
+	[K || K = #rstation{genre=X2} <- Stations, lists:member(X2, Genres)].
+
+transform_to_record([], NewList) -> NewList; 
+transform_to_record([{Id, Genre, Host, Port, Location}|T], NewList) ->
+	transform_to_record(T, NewList ++ [#rstation{name=Id, genre=Genre, streamhost=Host, streamport=Port,streamlocation=Location}]).
+	
 
 
 check_on_wishlist(Artist, Title, Wishlist) ->
@@ -229,20 +236,23 @@ transform_2_lower(Tuples) ->
 
 startstop_test() -> 
 	start(),
+	timer:sleep(1000),
 	stop().
 	
 
 check_stations_test() ->
-	Stations= [{x, genre1, x, x, x }, {x, genre2, x, x, x }, {x, genre1, x, x, x } ],
-	StationsWrong= [{x, genre31, x, x, x }, {x, genre2, x, x, x}, {x, genre1, x, x, x }],
+	io:format("Format1"),
+	Stations= [#rstation{genre=genre1}, #rstation{genre=genre2}, #rstation{genre=genre1} ],
+	io:format("Format"),
+	StationsWrong= [#rstation{genre=genre31}, #rstation{genre=genre2}, #rstation{genre=genre2}],
 	Genres = [genre1, genre2],
 	true = check_stations(Stations, Genres),
 	false = check_stations(StationsWrong, Genres),
 	ok.
 	
 get_stations_bygenre_test() ->
-	Stations= [{x, genre1, x, x, x }, {x, genre2, x, x, x }, {x, genre1, x, x, x }, {x, genre1, x, x, x }, {x, genr31, x, x, x } ],
-	Genres = [genre1],									% Test with only one genre
+	Stations= [#rstation{genre=genre1}, #rstation{genre=genre2}, #rstation{genre=genre1}, #rstation{genre=genre1}, #rstation{genre=genre31}],
+	Genres = [genre1],				
 	L = get_stations_by_genre(Stations, Genres),
 	true = check_stations(L, Genres),					% All found of Correct genre
 	Genres2 = [genre1, genre2],							% Test with multiple genres

@@ -1,4 +1,4 @@
-%% Copyright 2010 Ulf Angermann
+ %% Copyright 2010 Ulf Angermann
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -13,35 +13,34 @@
 %% limitations under the License.
 
 %%% -------------------------------------------------------------------
-%%% Author  : Ulf Angermann uaforum1@googlemail.com
+%%% Author  : Martin Huber (martin.huber@innoq.com)
 %%% Description :
 %%%
 %%% Created : 
 %%% -------------------------------------------------------------------
 -module(mc_controller).
-
 -behaviour(supervisor).
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
 -include_lib("eunit/include/eunit.hrl").
-
+-include_lib("../include/mc.hrl"). 
 %% --------------------------------------------------------------------
 %% External exports
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_link/0]).
--export([start/0]).
+-export([init/1, start_link/0, start_child/2, terminate/2, start_search/0]).
+
+-define(SERVER, ?MODULE).
+
 
 %% ====================================================================
 %% External functions
 %% ====================================================================
 
-%% --------------------------------------------------------------------
-%% record definitions
-%% --------------------------------------------------------------------
--record(state, {}).
+terminate(X,Y) ->
+	io:format("Terminate:~p~p~n", [X,Y]).
+
 %% ====================================================================
 %% Server functions
 %% ====================================================================
@@ -50,75 +49,33 @@
 %% Description: Starts the server
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-start() ->
-	start_link().
-%% --------------------------------------------------------------------
-%% Function: init/1
-%% Description: Initiates the server
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          ignore               |
-%%          {stop, Reason}
-%% --------------------------------------------------------------------
-init([]) ->
-    {ok, #state{}}.
+start_child(Rstation, File ) ->
+	supervisor:start_child(?SERVER, [Rstation, File]).
 
-%% --------------------------------------------------------------------
-%% Function: handle_call/3
-%% Description: Handling call messages
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
-%% --------------------------------------------------------------------
-handle_call(Request, From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+init([]) -> 
+	IcyServer = {mc_icy, {mc_icy, start_link, []}, permanent, brutal_kill, worker, [mc_icy]},
+	Children = [IcyServer],
+	RestartStrategy = {simple_one_for_one, 0, 1},
+	{ok, {RestartStrategy, Children}}.
+	
 
-%% --------------------------------------------------------------------
-%% Function: handle_cast/2
-%% Description: Handling cast messages
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%% --------------------------------------------------------------------
-handle_cast(Msg, State) ->
-    {noreply, State}.
+ %% ===================================================================
+%% API
+%% ===================================================================
 
-%% --------------------------------------------------------------------
-%% Function: handle_info/2
-%% Description: Handling all non call/cast messages
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%% --------------------------------------------------------------------
-handle_info(Info, State) ->
-    {noreply, State}.
+start_search() ->
+	L=mc_config:stations(),
+	start_search(L, "/Users/martinh/Music/musiccrawler/").
 
-%% --------------------------------------------------------------------
-%% Function: terminate/2
-%% Description: Shutdown the server
-%% Returns: any (ignored by gen_server)
-%% --------------------------------------------------------------------
-terminate(Reason, State) ->
-    ok.
 
-%% --------------------------------------------------------------------
-%% Func: code_change/3
-%% Purpose: Convert process state when code is changed
-%% Returns: {ok, NewState}
-%% --------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
-    {ok, State}.
+%% ===================================================================
+%% Internal Functions
+%% ===================================================================
 
-%% --------------------------------------------------------------------
-%%% Internal functions
-%% --------------------------------------------------------------------
-%% --------------------------------------------------------------------
-%%% Test functions
-%% --------------------------------------------------------------------
-
+start_search([], _) -> ok;
+start_search([Station|T], File) ->
+	mc_controller:start_child(Station, File),
+	start_search(T, File).
+ 

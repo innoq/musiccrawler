@@ -29,20 +29,25 @@
 -export([init/1]).
 
 %% Helper macro for declaring children of supervisor
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
+%% -define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
+-define(SERVER, ?MODULE).
 
 %% ===================================================================
 %% API functions
 %% ===================================================================
 
 start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
 init([]) ->
-	ModIcy = {mc_icy, {mc_icy, start_link, []}},
-    {ok, { {one_for_one, 5, 10}, []} }.
+
+	ConfigServer = {mc_config, {mc_config, start, []},  permanent, 2000, worker, [mc_config]},
+	Controller = {mc_controller, {mc_controller, start_link, []},  permanent, 2000, supervisor, [mc_controller]}, 
+	Children = [Controller, ConfigServer],
+	RestartStrategy = {one_for_one, 4, 3600},
+	{ok, {RestartStrategy, Children}}.
 

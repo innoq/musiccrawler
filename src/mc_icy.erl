@@ -34,6 +34,8 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("../include/mc.hrl").
+
 -define(SERVER, ?MODULE).
 -define(STRTITLECONST, "StreamTitle='").
 -define(STRURLCONST, "';Stre").
@@ -41,7 +43,7 @@
 -define(DEFAULT_FILE, "/tmp/").
 -define(METADATA_DEF, " HTTP/1.0\r\nIcy-Metadata: 1\r\n\r\n").
 
--record(state, {	port, 
+-record(state, {	rstation, 
 					sofar, 
 					filepath, 
 					lsock, 
@@ -63,16 +65,17 @@
 %%  Pid = pid()
 %% @end
 %%--------------------------------------------------------------------
+start_link(Rstation, File) ->
+	gen_server:start_link({local, Rstation#rstation.name}, ?MODULE, [Rstation, File], []).
+
 start_link(Port, Host, Location, File) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [Port, Host, Location, File], []).
+	Rstation = #rstation{streamport=Port, streamhost=Host, streamlocation=Location, name=xyz},
+    gen_server:start_link({local, Rstation#rstation.name}, ?MODULE, [Rstation, File], []).
 
 start_link(Host, Location, File) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [?DEFAULT_PORT, Host, Location, File], []).
+	Rstation = #rstation{streamport=?DEFAULT_PORT, streamhost=Host, streamlocation=Location},
+    gen_server:start_link({local, Rstation#rstation.name}, ?MODULE, [Rstation,  File], []).
 
-%% @spec start_link() -> {ok, Pid}
-%% @doc Calls `start_link(Port)' using the default port.      
-start_link(Host, Location) ->
-	start_link(?DEFAULT_PORT, Host, Location, ?DEFAULT_FILE).
 
 %%--------------------------------------------------------------------
 %% @doc Stops the server.
@@ -86,12 +89,13 @@ stop() ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([Port, Host, Location, FilePath]) -> 
-	GetStr = string:concat("GET ", string:concat(Location, ?METADATA_DEF))	,
-	{ok, Socket} = gen_tcp:connect(Host, ?DEFAULT_PORT, [binary, {packet, 0}]),
+init([Rstation, FilePath]) -> 
+	io:format("Start Listening to: ~p~n", [Rstation]),
+	GetStr = string:concat("GET ", string:concat(Rstation#rstation.streamlocation, ?METADATA_DEF))	,
+	{ok, Socket} = gen_tcp:connect(Rstation#rstation.streamhost, Rstation#rstation.streamport, [binary, {packet, 0}]),
 	ok = gen_tcp:send(Socket, GetStr),
 	MetaInit = <<>>,
-    {ok, #state{port = Port, sofar=[], lsock = Socket, filepath=FilePath, metabeforeoverlap=MetaInit}}.
+    {ok, #state{rstation = Rstation, sofar=[], lsock = Socket, filepath=FilePath, metabeforeoverlap=MetaInit}}.
 
 handle_call(_,_,State) ->
 	{reply, {ok, State}}.
@@ -352,7 +356,7 @@ analyzeOfO([H|T])
 evaluateStreamtitle (Meta, InterpretOld, TitleOld) -> 
 	case size(Meta) > 14 of
 		true ->
-				io:format("Stream_meta: ~s~n", [Meta]),
+%% 				io:format("Stream_meta: ~s~n", [Meta]),
 				Str = binary_to_list(Meta),
 				IndexOfStreamTitleEnd = string:str(Str, ?STRTITLECONST) + length(?STRTITLECONST),
 				StrTit = string:substr(Str, IndexOfStreamTitleEnd, string:str(Str, ?STRURLCONST)-IndexOfStreamTitleEnd), 

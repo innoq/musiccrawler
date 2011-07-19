@@ -31,8 +31,10 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
+	io:format("Starting...~n"),
     case mc_sup:start_link() of
 		{ok, Pid} ->
+				io:format("App Started...~n"),
 				{ok, Pid};
 		Other -> 
 				{error, Other}
@@ -40,3 +42,6 @@ start(_StartType, _StartArgs) ->
 
 stop(_State) ->
     ok.
+
+
+
