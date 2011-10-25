@@ -214,15 +214,17 @@ check_on_wishlist(Artist, Title, Wishlist) ->
 	ArtistPrep = string:to_lower(string:strip(Artist)),
 	TitlePrep = string:to_lower(string:strip(Title)),
 	case lists:keysearch(ArtistPrep,1,Wishlist) of
+		{value, {_,"*"}} ->
+				true;
 		{value, {_,T}} ->
-					try 
+				try 
 						T = TitlePrep,	%% If this line works, and does throw any foul tomatoes, its found!
 						true
-					catch 		
+				catch 		
 						%% if there's an exception, we have an artist but with another title, 
 						%% so try the same without that recently found key
 						_:_ -> check_on_wishlist(Artist, Title, lists:keydelete(ArtistPrep, 1, Wishlist))
-					end;
+				end;
 		false -> false
 	end.
 	
@@ -280,7 +282,8 @@ check_on_wishlist_test() ->
 		 {" File Brazilia","Lieut. Gingivitis Shit"},
  		 {"Adam Shaikh ","Emergence (Sub Dub Remix')"},
  	     {"Fresh Moods","Rhythm1"},
-		 {"Fresh Moods","Rhythm2"}],
+		 {"Fresh Moods","Rhythm2"},
+		 {"ABC","*"}],
 
 	TestWishlist = transform_2_lower(Twl),
 	true = check_on_wishlist("Fresh Moods","Rhythm1", TestWishlist),
@@ -290,6 +293,7 @@ check_on_wishlist_test() ->
 	true = check_on_wishlist("Fresh Moods","Rhythm2", TestWishlist),
 	true = check_on_wishlist(" GRANUfuNk ","Der Himmel con Hollywood", TestWishlist),
 	true = check_on_wishlist(" GRANUfuNk ","Der HIMMEl con Hollywood", TestWishlist),
+	true = check_on_wishlist("ABC","Xdre", TestWishlist),    					   
 	false = check_on_wishlist("Fresh Moods","Rhythm3", TestWishlist),
 	false = check_on_wishlist("Fresh Moods"," Rhythm3 ", TestWishlist),
 	false = check_on_wishlist(" FRESH Moods"," Rhythm3 ", TestWishlist),
