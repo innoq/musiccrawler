@@ -21,3 +21,13 @@
 					streamhost,
 					streamport,
 					streamlocation}).
+
+-record(wishlist, { 
+						id,
+						clientid,
+						artist,
+						title,
+						genre,
+						saved
+						}).
+
